@@ -10,20 +10,31 @@ import heapq
 import datetime
 import time
 import sys
+import json
+
+def writeTxSequence(seq, path):
+    with open(path, 'w') as path:
+        json.dump(seq, path, indent=2)
 
 def main(argv):
     mempoolfilepath = ''
+    sequence = None
+    sequenceFile = None
     try:
-        opts, args = getopt.getopt(argv, "hm:", ["mempoolfile="])
+        opts, args = getopt.getopt(argv, "hm:", ["mempoolfile=", 'sequence='])
     except getopt.GetoptError:
         print ('blockbuilder.py -m <mempoolfile>')
         sys.exit(2)
     for opt, arg in opts:
+        print(opt, arg)
         if opt == '-h':
             print ('blockbuilder.py -m <mempoolfile>')
             sys.exit()
         elif opt in ("-m", "--mempoolfile"):
             mempoolfilepath = arg
+        elif opt == '--sequence':
+            sequence = []
+            sequenceFile = arg
         print ('Mempool file is "', mempoolfilepath)
 
     if mempoolfilepath == '':
@@ -32,12 +43,21 @@ def main(argv):
 
     startTime = time.time()
     mempool = Mempool()
-    mempool.fromTXT(mempoolfilepath)
+    if mempoolfilepath.endswith('.json'):
+        mempool.fromJSON(mempoolfilepath)
+    elif mempoolfilepath.endswith('.txt'):
+        mempool.fromTXT(mempoolfilepath)
+    else:
+        raise "invalid extension " + mempoolfilepath
+
     bb = AncestorSetBlockbuilder(mempool)
-    bb.buildBlockTemplate()
+    bb.buildBlockTemplate(sequence)
     bb.outputBlockTemplate(mempool.blockId)
     endTime = time.time()
     logging.info('Elapsed time: ' + str(endTime - startTime))
+    if sequence != None:
+        print('writing sequence to ' + sequenceFile)
+        writeTxSequence(sequence, sequenceFile)
 
 class AncestorSetBlockbuilder(Blockbuilder):
     def __init__(self, mempool, weightLimit=3992820):
@@ -104,7 +124,7 @@ class AncestorSetBlockbuilder(Blockbuilder):
                 self.txAncestorSetMap[d] = replacement
                 heapq.heappush(self.ancestorSets, replacement)
 
-    def buildBlockTemplate(self):
+    def buildBlockTemplate(self, sequence = None):
         logging.info("Building blocktemplate...")
         self.initialize_stubs()
 
@@ -120,6 +140,8 @@ class AncestorSetBlockbuilder(Blockbuilder):
                 # complete, but too big: discard
                 continue
             else:
+                if sequence != None:
+                    sequence.append(list(bestAncestorSet.txs.keys()))
                 # Add to block
                 self.add_to_block(bestAncestorSet)
                 self.reset_remaining_descendants(bestAncestorSet)
